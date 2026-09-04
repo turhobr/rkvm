@@ -1,33 +1,49 @@
-# Either an address or a hostname, with a port.
+### Required
+
+# Address and port to listen on. A hostname works too.
 listen = "0.0.0.0:5258"
-# See `switch-keys.md` in the repository root for the list of all possible keys.
+
+# Keys that, pressed together, hand control to the next machine.
+# See `switch-keys.md` for every name you can use here.
 switch-keys = ["left-alt", "left-ctrl"]
-# Optional per client shortcuts, jumping straight to one machine instead of cycling.
-# The name "server" means this machine, everything else matches a client's `name`.
+
+# TLS certificate and private key, generated with rkvm-certificate-gen.
+certificate = "/etc/rkvm/certificate.pem"
+key = "/etc/rkvm/key.pem"
+
+# Clients have to know this to connect. Change it before deploying.
+password = "123456789"
+
+### Optional
+
+# Whether the switch keys also reach the machine being controlled.
+# Individual switch keys keep working as normal keys either way.
+# propagate-switch-keys = true
+
+# Devices whose name contains any of these are never taken over.
+# Case insensitive, matched on a substring.
+# ignore-devices = ["Wacom", "SteelSeries"]
+
+# Lights the caps lock LED up while another machine is being controlled.
+# Either "none" or "caps-lock".
+# indicator = "caps-lock"
+
+# Command to run on every switch, through sh.
+# The target's name is in $1 and in $RKVM_TARGET.
+# on-switch = "notify-send rkvm \"now on $RKVM_TARGET\""
+
+### Optional, and has to stay at the end of the file
+### Everything below a [table] header belongs to that table.
+
+# Shortcuts that jump straight to one machine instead of cycling.
+# "server" means this machine, any other name matches a client's `name`.
 # [switch-to]
 # server = ["left-alt", "escape"]
 # laptop = ["left-alt", "f1"]
 
-# Whether the switch key combination should be propagated on the server and its clients.
-# Individual switch keys still work as normal keys either way, only the completed
-# combination is withheld when this is false.
-# Optional, defaults to true.
-# propagate-switch-keys = true
-# Devices whose name contains any of these are left alone, case insensitive.
-# ignore-devices = ["Wacom", "SteelSeries"]
-
-# Light up the caps lock LED while another machine is being controlled.
-# Either "none" (default) or "caps-lock".
-# indicator = "caps-lock"
-
-# Optional command to run on every switch, with the target's name in $1 and $RKVM_TARGET.
-# on-switch = "notify-send rkvm \"now on $RKVM_TARGET\""
-
-certificate = "/etc/rkvm/certificate.pem"
-key = "/etc/rkvm/key.pem"
-
-# This is to prevent malicious clients from connecting to the server.
-# Make sure this matches your client's config.
-#
-# Change this to your own value before deploying rkvm.
-password = "123456789"
+# Clipboard sharing. All three commands run through sh,
+# and {type} is replaced with the MIME type being copied.
+# [clipboard]
+# list-types = "wl-paste --list-types"
+# read = "wl-paste --no-newline --type {type}"
+# write = "wl-copy --type {type}"

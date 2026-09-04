@@ -7,6 +7,7 @@ use rkvm_input::monitor::Monitor;
 use rkvm_input::rel::RelAxis;
 use rkvm_input::sync::SyncEvent;
 use rkvm_net::auth::{AuthChallenge, AuthResponse, AuthStatus};
+use rkvm_net::clipboard;
 use rkvm_net::message::Message;
 use rkvm_net::version::Version;
 use rkvm_net::{Pong, Update};
@@ -94,6 +95,8 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
 
     tracing::info!("Listening on {}", local_addr);
 
+    let (mut clipboard_changes, clipboard) = clipboard::new(config.clipboard.clone());
+
     let mut monitor = Monitor::new(config.ignore_devices.clone());
     let mut devices = Slab::<Device>::new();
     let mut clients = Slab::<Client>::new();
@@ -107,17 +110,32 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
 
     let (events_sender, mut events_receiver) = mpsc::channel(1);
     let (authenticated_sender, mut authenticated_receiver) = mpsc::channel(1);
+    let (clipboard_sender, mut clipboard_receiver) = mpsc::channel::<clipboard::Data>(1);
 
     loop {
         let event = async { events_receiver.recv().await.unwrap() };
         let authenticated = async { authenticated_receiver.recv().await.unwrap() };
+        let shared = async { clipboard_receiver.recv().await.unwrap() };
 
         tokio::select! {
+            data = clipboard_changes.next() => {
+                for (_, client) in &clients {
+                    let _ = client.sender.send(Update::Clipboard(data.clone())).await;
+                }
+            }
+            data = shared => {
+                clipboard.apply(data.clone());
+
+                for (_, client) in &clients {
+                    let _ = client.sender.send(Update::Clipboard(data.clone())).await;
+                }
+            }
             result = listener.accept() => {
                 let (stream, addr) = result.map_err(Error::Network)?;
                 let acceptor = acceptor.clone();
                 let password = password.to_owned();
                 let authenticated_sender = authenticated_sender.clone();
+                let clipboard_sender = clipboard_sender.clone();
 
                 let (sender, receiver) = mpsc::channel(1);
 
@@ -130,6 +148,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             sender,
                             addr,
                             authenticated_sender,
+                            clipboard_sender,
                             receiver,
                             stream,
                             acceptor,
@@ -517,6 +536,7 @@ async fn client(
     sender: Sender<Update>,
     addr: SocketAddr,
     authenticated: Sender<(Sender<Update>, SocketAddr, Option<String>)>,
+    clipboard: Sender<clipboard::Data>,
     mut receiver: Receiver<Update>,
     stream: TcpStream,
     acceptor: TlsAcceptor,
@@ -604,7 +624,7 @@ async fn client(
         };
 
         let start = Instant::now();
-        rkvm_net::timeout(rkvm_net::WRITE_TIMEOUT, async {
+        rkvm_net::timeout(update.timeout(), async {
             update.encode(&mut stream).await?;
             stream.flush().await?;
 
@@ -618,10 +638,17 @@ async fn client(
             tracing::debug!(duration = ?duration, "Sent ping");
 
             let start = Instant::now();
-            rkvm_net::timeout(rkvm_net::READ_TIMEOUT, Pong::decode(&mut stream)).await?;
+            let pong =
+                rkvm_net::timeout(rkvm_net::CLIPBOARD_TIMEOUT, Pong::decode(&mut stream)).await?;
             let duration = start.elapsed();
 
             tracing::debug!(duration = ?duration, "Received pong");
+
+            if let Some(data) = pong.clipboard {
+                if clipboard.send(data).await.is_err() {
+                    break;
+                }
+            }
         }
 
         tracing::trace!("Wrote an update");

@@ -2,6 +2,7 @@
 #![allow(async_fn_in_trait)]
 
 pub mod auth;
+pub mod clipboard;
 pub mod message;
 pub mod version;
 
@@ -28,6 +29,9 @@ pub const WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 // TLS negotiation timeout.
 pub const TLS_TIMEOUT: Duration = Duration::from_millis(500);
 
+// Clipboard contents can be megabytes, so they get their own budget.
+pub const CLIPBOARD_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Deserialize, Serialize, Debug)]
 pub enum Update {
     CreateDevice {
@@ -49,11 +53,23 @@ pub enum Update {
         id: usize,
         event: Event,
     },
+    Clipboard(clipboard::Data),
     Ping,
 }
 
+impl Update {
+    pub fn timeout(&self) -> Duration {
+        match self {
+            Update::Clipboard(_) => CLIPBOARD_TIMEOUT,
+            _ => WRITE_TIMEOUT,
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, Debug)]
-pub struct Pong;
+pub struct Pong {
+    pub clipboard: Option<clipboard::Data>,
+}
 
 pub async fn timeout<T: Future<Output = Result<U, Error>>, U>(
     duration: Duration,
@@ -72,7 +88,7 @@ mod test {
     #[tokio::test]
     async fn pong_is_not_empty() {
         let mut data = Vec::new();
-        Pong.encode(&mut data).await.unwrap();
+        Pong { clipboard: None }.encode(&mut data).await.unwrap();
 
         assert!(!data.is_empty());
     }

@@ -13,6 +13,7 @@ pub struct Config {
     pub certificate: PathBuf,
     pub password: String,
     pub name: Option<String>,
+    pub clipboard: Option<rkvm_net::clipboard::Config>,
 }
 
 pub struct Server {

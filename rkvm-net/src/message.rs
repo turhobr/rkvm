@@ -4,6 +4,9 @@ use serde::Serialize;
 use std::io::{Error, ErrorKind};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+// Enough for the largest clipboard contents plus overhead.
+const MAX_LENGTH: usize = crate::clipboard::MAX_SIZE + 4096;
+
 pub trait Message: Sized {
     async fn decode<R: AsyncRead + Send + Unpin>(stream: &mut R) -> Result<Self, Error>;
 
@@ -12,16 +15,19 @@ pub trait Message: Sized {
 
 impl<T: DeserializeOwned + Serialize + Sync> Message for T {
     async fn decode<R: AsyncRead + Send + Unpin>(stream: &mut R) -> Result<Self, Error> {
-        let length = stream.read_u16().await?;
+        let length = stream.read_u32().await?;
+        if length as usize > MAX_LENGTH {
+            return Err(Error::new(ErrorKind::InvalidData, "Message too large"));
+        }
 
-        let mut data = vec![0; length.into()];
+        let mut data = vec![0; length as usize];
         stream.read_exact(&mut data).await?;
 
         let data = options()
             .deserialize(&data)
             .map_err(|err| Error::new(ErrorKind::InvalidData, err))?;
 
-        tracing::trace!("Read {} bytes", 2 + length);
+        tracing::trace!("Read {} bytes", 4 + length);
 
         Ok(data)
     }
@@ -36,15 +42,15 @@ impl<T: DeserializeOwned + Serialize + Sync> Message for T {
             .try_into()
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Data too large"))?;
 
-        stream.write_u16(length).await?;
+        stream.write_u32(length).await?;
         stream.write_all(&data).await?;
 
-        tracing::trace!("Wrote {} bytes", 2 + data.len());
+        tracing::trace!("Wrote {} bytes", 4 + data.len());
 
         Ok(())
     }
 }
 
 fn options() -> impl Options {
-    DefaultOptions::new().with_limit(u16::MAX.into())
+    DefaultOptions::new().with_limit(MAX_LENGTH as _)
 }

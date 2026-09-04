@@ -1,4 +1,7 @@
+use crate::config::Config;
+
 use rkvm_input::writer::Writer;
+use rkvm_net::clipboard::{Applier, Changes};
 use rkvm_net::auth::{AuthChallenge, AuthStatus};
 use rkvm_net::message::Message;
 use rkvm_net::version::Version;
@@ -27,12 +30,16 @@ pub enum Error {
 }
 
 pub async fn run(
-    hostname: &ServerName,
-    port: u16,
+    config: &Config,
     connector: TlsConnector,
-    password: &str,
-    name: &Option<String>,
+    changes: &mut Changes,
+    applier: &Applier,
 ) -> Result<(), Error> {
+    let hostname = &config.server.hostname;
+    let port = config.server.port;
+    let password = &config.password;
+    let name = &config.name;
+
     // Intentionally don't impose any timeout for TCP connect.
     let stream = match hostname {
         ServerName::DnsName(name) => TcpStream::connect(&(name.as_ref(), port)).await,
@@ -114,7 +121,12 @@ pub async fn run(
 
     let mut start = Instant::now();
 
-    let mut interval = time::interval(rkvm_net::PING_INTERVAL + rkvm_net::READ_TIMEOUT);
+    let reply_timeout = match config.clipboard {
+        Some(_) => rkvm_net::CLIPBOARD_TIMEOUT,
+        None => rkvm_net::READ_TIMEOUT,
+    };
+
+    let mut interval = time::interval(rkvm_net::PING_INTERVAL + reply_timeout);
     let mut writers = HashMap::new();
 
     // Interval ticks immediately after creation.
@@ -197,6 +209,10 @@ pub async fn run(
 
                 tracing::trace!(id = %id, "Wrote an event to device");
             }
+            Update::Clipboard(data) => {
+                tracing::debug!(data = ?data, "Received clipboard");
+                applier.apply(data);
+            }
             Update::Ping => {
                 let duration = start.elapsed();
                 tracing::debug!(duration = ?duration, "Received ping");
@@ -204,8 +220,12 @@ pub async fn run(
                 start = Instant::now();
                 interval.reset();
 
-                rkvm_net::timeout(rkvm_net::WRITE_TIMEOUT, async {
-                    Pong.encode(&mut stream).await?;
+                let pong = Pong {
+                    clipboard: changes.try_next(),
+                };
+
+                rkvm_net::timeout(reply_timeout, async {
+                    pong.encode(&mut stream).await?;
                     stream.flush().await?;
 
                     Ok(())

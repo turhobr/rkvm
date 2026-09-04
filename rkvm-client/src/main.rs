@@ -4,6 +4,7 @@ mod tls;
 
 use clap::Parser;
 use config::Config;
+use rkvm_net::clipboard;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -70,19 +71,14 @@ async fn main() -> ExitCode {
         }
     };
 
+    let (mut changes, applier) = clipboard::new(config.clipboard.clone());
+
     let run = async {
         let mut delay = RECONNECT_MIN;
 
         loop {
             let start = Instant::now();
-            let result = client::run(
-                &config.server.hostname,
-                config.server.port,
-                connector.clone(),
-                &config.password,
-                &config.name,
-            )
-            .await;
+            let result = client::run(&config, connector.clone(), &mut changes, &applier).await;
 
             match result {
                 Ok(()) => tracing::info!("Disconnected"),

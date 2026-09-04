@@ -19,6 +19,7 @@ pub struct Config {
     pub ignore_devices: Vec<String>,
     #[serde(default)]
     pub indicator: Indicator,
+    pub clipboard: Option<rkvm_net::clipboard::Config>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Default)]

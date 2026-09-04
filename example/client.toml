@@ -1,11 +1,25 @@
-server = "myserver.local:5258"
-# Optional name, so the server can switch straight to this machine.
-# name = "laptop"
+### Required
 
+# Address or hostname of the server, with its port.
+server = "myserver.local:5258"
+
+# The server's TLS certificate, generated with rkvm-certificate-gen.
 certificate = "/etc/rkvm/certificate.pem"
 
-# This is to prevent malicious clients from connecting to the server.
-# Make sure this matches your server's config.
-#
-# Change this to your own value before deploying rkvm.
+# Has to match the server's password.
 password = "123456789"
+
+### Optional
+
+# Name of this machine, so the server can switch straight to it.
+# name = "laptop"
+
+### Optional, and has to stay at the end of the file
+### Everything below a [table] header belongs to that table.
+
+# Clipboard sharing. All three commands run through sh,
+# and {type} is replaced with the MIME type being copied.
+# [clipboard]
+# list-types = "wl-paste --list-types"
+# read = "wl-paste --no-newline --type {type}"
+# write = "wl-copy --type {type}"
