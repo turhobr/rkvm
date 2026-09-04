@@ -111,6 +111,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
     let mut deferred = Vec::new();
     let mut propagated = HashMap::new();
     let mut suppressed = false;
+    let mut clipboard_contents = None;
 
     let (events_sender, mut events_receiver) = mpsc::channel(1);
     let (authenticated_sender, mut authenticated_receiver) = mpsc::channel(1);
@@ -126,6 +127,8 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                 for (_, client) in &clients {
                     let _ = client.sender.try_send(Update::Clipboard(data.clone()));
                 }
+
+                clipboard_contents = Some(data);
             }
             data = shared => {
                 clipboard.apply(data.clone());
@@ -133,6 +136,8 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                 for (_, client) in &clients {
                     let _ = client.sender.try_send(Update::Clipboard(data.clone()));
                 }
+
+                clipboard_contents = Some(data);
             }
             result = listener.accept() => {
                 let (stream, addr) = result.map_err(Error::Network)?;
@@ -195,6 +200,10 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                         alive = false;
                         break;
                     }
+                }
+
+                if let Some(data) = alive.then_some(clipboard_contents.clone()).flatten() {
+                    alive = sender.send(Update::Clipboard(data)).await.is_ok();
                 }
 
                 if alive {
