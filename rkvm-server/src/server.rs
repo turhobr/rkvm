@@ -203,7 +203,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                 }
 
                 if let Some(data) = alive.then_some(clipboard_contents.clone()).flatten() {
-                    alive = sender.send(Update::Clipboard(data)).await.is_ok();
+                    let _ = sender.try_send(Update::Clipboard(data));
                 }
 
                 if alive {
@@ -477,6 +477,10 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             }
                         }
 
+                        continue;
+                    }
+
+                    if !clients.contains(idx - 1) {
                         continue;
                     }
 
