@@ -17,6 +17,7 @@ use std::ffi::CString;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufStream};
@@ -24,11 +25,15 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::process::Command;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time;
 use tokio_rustls::TlsAcceptor;
 use tracing::Instrument;
 
 const MAX_NAME_LENGTH: usize = 64;
+
+// Connections waiting to authenticate, so that a flood of them can't pile up.
+const MAX_PENDING: usize = 16;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -115,6 +120,8 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
     let mut suppressed = false;
     let mut clipboard_contents = None;
 
+    let pending = Arc::new(Semaphore::new(MAX_PENDING));
+
     let (events_sender, mut events_receiver) = mpsc::channel(1);
     let (authenticated_sender, mut authenticated_receiver) = mpsc::channel(1);
     let (clipboard_sender, mut clipboard_receiver) = mpsc::channel::<clipboard::Data>(1);
@@ -143,6 +150,15 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
             }
             result = listener.accept() => {
                 let (stream, addr) = result.map_err(Error::Network)?;
+
+                let permit = match pending.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        tracing::warn!(addr = %addr, "Too many connections waiting to authenticate");
+                        continue;
+                    }
+                };
+
                 let acceptor = acceptor.clone();
                 let password = password.to_owned();
                 let authenticated_sender = authenticated_sender.clone();
@@ -165,6 +181,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             acceptor,
                             &password,
                             reply_timeout,
+                            permit,
                         )
                         .await;
 
@@ -573,6 +590,7 @@ async fn client(
     acceptor: TlsAcceptor,
     password: &str,
     reply_timeout: Duration,
+    permit: OwnedSemaphorePermit,
 ) -> Result<(), ClientError> {
     // Input events are tiny and latency sensitive, don't let Nagle sit on them.
     stream.set_nodelay(true)?;
@@ -641,6 +659,7 @@ async fn client(
     }
 
     tracing::info!("Authenticated successfully");
+    drop(permit);
 
     if authenticated.send((sender, addr, name)).await.is_err() {
         return Ok(());
