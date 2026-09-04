@@ -170,9 +170,26 @@ impl Interceptor {
         Repeat::new(self)
     }
 
-    #[tracing::instrument(skip(registry))]
-    pub(crate) async fn open(path: &Path, registry: &Registry) -> Result<Self, OpenError> {
+    #[tracing::instrument(skip(registry, ignore))]
+    pub(crate) async fn open(
+        path: &Path,
+        registry: &Registry,
+        ignore: &[String],
+    ) -> Result<Self, OpenError> {
         let evdev = Evdev::open(path).await?;
+
+        let name = unsafe { CStr::from_ptr(glue::libevdev_get_name(evdev.as_ptr())) }
+            .to_string_lossy()
+            .to_lowercase();
+
+        if let Some(pattern) = ignore
+            .iter()
+            .find(|pattern| name.contains(&pattern.to_lowercase()))
+        {
+            tracing::info!(name = %name, pattern = %pattern, "Ignoring device");
+            return Err(OpenError::NotAppliable);
+        }
+
         let metadata = evdev.file().unwrap().get_ref().metadata()?;
 
         let reader_handle = registry

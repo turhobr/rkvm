@@ -16,9 +16,9 @@ pub struct Monitor {
 }
 
 impl Monitor {
-    pub fn new() -> Self {
+    pub fn new(ignore: Vec<String>) -> Self {
         let (sender, receiver) = mpsc::channel(1);
-        tokio::spawn(monitor(sender));
+        tokio::spawn(monitor(sender, ignore));
 
         Self { receiver }
     }
@@ -31,7 +31,7 @@ impl Monitor {
     }
 }
 
-async fn monitor(sender: Sender<Result<Interceptor, Error>>) {
+async fn monitor(sender: Sender<Result<Interceptor, Error>>, ignore: Vec<String>) {
     let run = async {
         let registry = Registry::new();
 
@@ -70,7 +70,7 @@ async fn monitor(sender: Sender<Result<Interceptor, Error>>) {
                 continue;
             }
 
-            let interceptor = match Interceptor::open(&path, &registry).await {
+            let interceptor = match Interceptor::open(&path, &registry, &ignore).await {
                 Ok(interceptor) => interceptor,
                 Err(OpenError::Io(err)) => {
                     tracing::warn!("Skipping {:?}: {}", path, err);

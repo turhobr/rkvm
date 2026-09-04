@@ -16,6 +16,8 @@ pub struct Config {
     pub propagate_switch_keys: Option<bool>,
     pub on_switch: Option<String>,
     #[serde(default)]
+    pub ignore_devices: Vec<String>,
+    #[serde(default)]
     pub indicator: Indicator,
 }
 

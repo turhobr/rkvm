@@ -13,6 +13,9 @@ switch-keys = ["left-alt", "left-ctrl"]
 # combination is withheld when this is false.
 # Optional, defaults to true.
 # propagate-switch-keys = true
+# Devices whose name contains any of these are left alone, case insensitive.
+# ignore-devices = ["Wacom", "SteelSeries"]
+
 # Light up the caps lock LED while another machine is being controlled.
 # Either "none" (default) or "caps-lock".
 # indicator = "caps-lock"

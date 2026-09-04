@@ -94,7 +94,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
 
     tracing::info!("Listening on {}", local_addr);
 
-    let mut monitor = Monitor::new();
+    let mut monitor = Monitor::new(config.ignore_devices.clone());
     let mut devices = Slab::<Device>::new();
     let mut clients = Slab::<Client>::new();
     let mut current = 0;
