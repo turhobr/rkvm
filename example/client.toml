@@ -1,4 +1,7 @@
 server = "myserver.local:5258"
+# Optional name, so the server can switch straight to this machine.
+# name = "laptop"
+
 certificate = "/etc/rkvm/certificate.pem"
 
 # This is to prevent malicious clients from connecting to the server.

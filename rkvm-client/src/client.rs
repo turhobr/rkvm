@@ -31,6 +31,7 @@ pub async fn run(
     port: u16,
     connector: TlsConnector,
     password: &str,
+    name: &Option<String>,
 ) -> Result<(), Error> {
     // Intentionally don't impose any timeout for TCP connect.
     let stream = match hostname {
@@ -99,6 +100,15 @@ pub async fn run(
         AuthStatus::Passed => {}
         AuthStatus::Failed => return Err(Error::Auth),
     }
+
+    rkvm_net::timeout(rkvm_net::WRITE_TIMEOUT, async {
+        name.encode(&mut stream).await?;
+        stream.flush().await?;
+
+        Ok(())
+    })
+    .await
+    .map_err(Error::Network)?;
 
     tracing::info!("Authenticated successfully");
 

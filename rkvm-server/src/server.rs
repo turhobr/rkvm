@@ -1,3 +1,5 @@
+use crate::config::Config;
+
 use rkvm_input::abs::{AbsAxis, AbsInfo};
 use rkvm_input::event::Event;
 use rkvm_input::key::{Key, KeyEvent};
@@ -33,21 +35,66 @@ pub enum Error {
     Overflow,
 }
 
-pub async fn run(
-    listen: &str,
-    acceptor: TlsAcceptor,
-    password: &str,
-    switch_keys: &HashSet<Key>,
-    propagate_switch_keys: bool,
-) -> Result<(), Error> {
-    let listener = TcpListener::bind(listen).await.map_err(Error::Network)?;
+enum Target {
+    Cycle,
+    Server,
+    Client(String),
+}
+
+struct Shortcut {
+    keys: HashSet<Key>,
+    target: Target,
+}
+
+struct Client {
+    sender: Sender<Update>,
+    addr: SocketAddr,
+    name: Option<String>,
+}
+
+impl Client {
+    fn label(&self) -> String {
+        self.name.clone().unwrap_or_else(|| self.addr.to_string())
+    }
+}
+
+pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
+    let propagate_switch_keys = config.propagate_switch_keys.unwrap_or(true);
+    let password = &config.password;
+
+    let mut shortcuts = vec![Shortcut {
+        keys: config.switch_keys.iter().copied().map(Into::into).collect(),
+        target: Target::Cycle,
+    }];
+
+    for (name, keys) in &config.switch_to {
+        let target = match name.as_str() {
+            "server" => Target::Server,
+            name => Target::Client(name.to_owned()),
+        };
+
+        shortcuts.push(Shortcut {
+            keys: keys.iter().copied().map(Into::into).collect(),
+            target,
+        });
+    }
+
+    // A longer combination has to win over a shorter one it contains.
+    shortcuts.sort_by_key(|shortcut| std::cmp::Reverse(shortcut.keys.len()));
+
+    let switch_keys = shortcuts
+        .iter()
+        .flat_map(|shortcut| shortcut.keys.iter().copied())
+        .collect::<HashSet<_>>();
+
+    let listener = TcpListener::bind(&config.listen).await.map_err(Error::Network)?;
     let local_addr = listener.local_addr().map_err(Error::Network)?;
 
     tracing::info!("Listening on {}", local_addr);
 
     let mut monitor = Monitor::new();
     let mut devices = Slab::<Device>::new();
-    let mut clients = Slab::<(Sender<_>, SocketAddr)>::new();
+    let mut clients = Slab::<Client>::new();
     let mut current = 0;
     let mut previous = 0;
     let mut changed = false;
@@ -96,9 +143,9 @@ pub async fn run(
                     .instrument(span),
                 );
             }
-            (sender, addr) = authenticated => {
+            (sender, addr, name) = authenticated => {
                 // Remove dead clients.
-                clients.retain(|_, (client, _)| !client.is_closed());
+                clients.retain(|_, client| !client.sender.is_closed());
                 if current != 0 && !clients.contains(current - 1) {
                     current = 0;
                 }
@@ -125,8 +172,10 @@ pub async fn run(
                 }
 
                 if alive {
-                    clients.insert((sender, addr));
-                    tracing::info!(addr = %addr, "Registered client");
+                    let client = Client { sender, addr, name };
+                    tracing::info!(addr = %addr, name = ?client.name, "Registered client");
+
+                    clients.insert(client);
                 }
             }
             result = monitor.read() => {
@@ -142,7 +191,7 @@ pub async fn run(
                 let keys = interceptor.key().collect::<HashSet<_>>();
                 let repeat = interceptor.repeat();
 
-                for (_, (sender, _)) in &clients {
+                for (_, client) in &clients {
                     let update = Update::CreateDevice {
                         id,
                         name: name.clone(),
@@ -156,7 +205,7 @@ pub async fn run(
                         period: repeat.period,
                     };
 
-                    let _ = sender.send(update).await;
+                    let _ = client.sender.send(update).await;
                 }
 
                 let (interceptor_sender, mut interceptor_receiver) = mpsc::channel(32);
@@ -216,12 +265,14 @@ pub async fn run(
             (id, result) = event => match result {
                 Ok(event) => {
                     let mut press = false;
+                    let mut pressed = false;
 
                     if let Event::Key(KeyEvent { key, down }) = event {
                         tracing::debug!(key = ?key, down = %down, "Key event");
 
                         if switch_keys.contains(&key) {
                             press = true;
+                            pressed = down;
 
                             match down {
                                 true => pressed_keys.insert(key),
@@ -235,31 +286,69 @@ pub async fn run(
                     let mut switched = false;
 
                     if press {
-                        if pressed_keys.len() == switch_keys.len() {
-                            switched = true;
+                        let shortcut = pressed
+                            .then(|| {
+                                shortcuts
+                                    .iter()
+                                    .find(|shortcut| shortcut.keys.is_subset(&pressed_keys))
+                            })
+                            .flatten();
 
-                            // Slab keys are sparse, so the cycle has to span the highest one rather than the count.
-                            let end = clients.iter().map(|(key, _)| key + 2).max().unwrap_or(1);
-                            loop {
-                                current = (current + 1) % end;
-                                if current == 0 || clients.contains(current - 1) {
-                                    break;
+                        match shortcut {
+                            Some(shortcut) => {
+                                switched = true;
+
+                                let target = match &shortcut.target {
+                                    Target::Cycle => {
+                                        // Slab keys are sparse, so the cycle has to span the highest one rather than the count.
+                                        let end = clients.iter().map(|(key, _)| key + 2).max().unwrap_or(1);
+                                        let mut next = current;
+
+                                        loop {
+                                            next = (next + 1) % end;
+                                            if next == 0 || clients.contains(next - 1) {
+                                                break;
+                                            }
+                                        }
+
+                                        Some(next)
+                                    }
+                                    Target::Server => Some(0),
+                                    Target::Client(name) => clients
+                                        .iter()
+                                        .find(|(_, client)| client.name.as_deref() == Some(name))
+                                        .map(|(key, _)| key + 1),
+                                };
+
+                                previous = idx;
+                                changed = true;
+
+                                match target {
+                                    Some(target) => {
+                                        current = target;
+
+                                        let label = match current {
+                                            0 => "server".to_owned(),
+                                            current => clients[current - 1].label(),
+                                        };
+
+                                        tracing::info!(target = %label, "Switched");
+                                    }
+                                    None => {
+                                        if let Target::Client(name) = &shortcut.target {
+                                            tracing::warn!(target = %name, "Client is not connected");
+                                        }
+                                    }
                                 }
                             }
+                            None => {
+                                if changed {
+                                    idx = previous;
 
-                            previous = idx;
-                            changed = true;
-
-                            if current != 0 {
-                                tracing::info!(idx = %current, addr = %clients[current - 1].1, "Switched client");
-                            } else {
-                                tracing::info!(idx = %current, "Switched client");
-                            }
-                        } else if changed {
-                            idx = previous;
-
-                            if pressed_keys.is_empty() {
-                                changed = false;
+                                    if pressed_keys.is_empty() {
+                                        changed = false;
+                                    }
+                                }
                             }
                         }
                     }
@@ -328,7 +417,7 @@ pub async fn run(
                     }
 
                     for (id, event) in events {
-                        if clients[idx - 1].0.send(Update::Event { id, event }).await.is_err() {
+                        if clients[idx - 1].sender.send(Update::Event { id, event }).await.is_err() {
                             clients.remove(idx - 1);
 
                             if current == idx {
@@ -340,8 +429,8 @@ pub async fn run(
                     }
                 }
                 Err(err) if err.kind() == ErrorKind::BrokenPipe => {
-                    for (_, (sender, _)) in &clients {
-                        let _ = sender.send(Update::DestroyDevice { id }).await;
+                    for (_, client) in &clients {
+                        let _ = client.sender.send(Update::DestroyDevice { id }).await;
                     }
                     devices.remove(id);
 
@@ -384,7 +473,7 @@ enum ClientError {
 async fn client(
     sender: Sender<Update>,
     addr: SocketAddr,
-    authenticated: Sender<(Sender<Update>, SocketAddr)>,
+    authenticated: Sender<(Sender<Update>, SocketAddr, Option<String>)>,
     mut receiver: Receiver<Update>,
     stream: TcpStream,
     acceptor: TlsAcceptor,
@@ -443,9 +532,12 @@ async fn client(
         return Err(ClientError::Auth);
     }
 
+    let name =
+        rkvm_net::timeout(rkvm_net::READ_TIMEOUT, Option::<String>::decode(&mut stream)).await?;
+
     tracing::info!("Authenticated successfully");
 
-    if authenticated.send((sender, addr)).await.is_err() {
+    if authenticated.send((sender, addr, name)).await.is_err() {
         return Ok(());
     }
 

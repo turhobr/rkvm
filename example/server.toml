@@ -2,6 +2,12 @@
 listen = "0.0.0.0:5258"
 # See `switch-keys.md` in the repository root for the list of all possible keys.
 switch-keys = ["left-alt", "left-ctrl"]
+# Optional per client shortcuts, jumping straight to one machine instead of cycling.
+# The name "server" means this machine, everything else matches a client's `name`.
+# [switch-to]
+# server = ["left-alt", "escape"]
+# laptop = ["left-alt", "f1"]
+
 # Whether the switch key combination should be propagated on the server and its clients.
 # Individual switch keys still work as normal keys either way, only the completed
 # combination is withheld when this is false.

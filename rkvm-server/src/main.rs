@@ -77,11 +77,8 @@ async fn main() -> ExitCode {
         }
     };
 
-    let switch_keys = config.switch_keys.into_iter().map(Into::into).collect();
-    let propagate_switch_keys = config.propagate_switch_keys.unwrap_or(true);
-
     tokio::select! {
-        result = server::run(&config.listen, acceptor, &config.password, &switch_keys, propagate_switch_keys) => {
+        result = server::run(&config, acceptor) => {
             if let Err(err) = result {
                 tracing::error!("Error: {}", err);
                 return ExitCode::FAILURE;

@@ -12,6 +12,7 @@ pub struct Config {
     pub server: Server,
     pub certificate: PathBuf,
     pub password: String,
+    pub name: Option<String>,
 }
 
 pub struct Server {

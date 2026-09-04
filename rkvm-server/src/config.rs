@@ -1,6 +1,6 @@
 use rkvm_input::key::{Button, Key, Keyboard};
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 #[derive(Deserialize)]
@@ -11,6 +11,8 @@ pub struct Config {
     pub key: PathBuf,
     pub password: String,
     pub switch_keys: HashSet<SwitchKey>,
+    #[serde(default)]
+    pub switch_to: HashMap<String, HashSet<SwitchKey>>,
     pub propagate_switch_keys: Option<bool>,
 }
 
