@@ -111,6 +111,30 @@ impl Interceptor {
         self.writer.write(event).await
     }
 
+    pub fn set_caps_lock_led(&self, on: bool) -> Result<(), Error> {
+        let supported = unsafe {
+            glue::libevdev_has_event_code(self.evdev.as_ptr(), glue::EV_LED, glue::LED_CAPSL)
+        };
+
+        if supported != 1 {
+            return Ok(());
+        }
+
+        let value = match on {
+            true => glue::libevdev_led_value_LIBEVDEV_LED_ON,
+            false => glue::libevdev_led_value_LIBEVDEV_LED_OFF,
+        };
+
+        let ret = unsafe {
+            glue::libevdev_kernel_set_led_value(self.evdev.as_ptr(), glue::LED_CAPSL, value)
+        };
+
+        match ret {
+            0 => Ok(()),
+            ret => Err(Error::from_raw_os_error(-ret)),
+        }
+    }
+
     pub fn name(&self) -> &CStr {
         let name = unsafe { glue::libevdev_get_name(self.evdev.as_ptr()) };
         let name = unsafe { CStr::from_ptr(name) };

@@ -15,6 +15,16 @@ pub struct Config {
     pub switch_to: HashMap<String, HashSet<SwitchKey>>,
     pub propagate_switch_keys: Option<bool>,
     pub on_switch: Option<String>,
+    #[serde(default)]
+    pub indicator: Indicator,
+}
+
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Indicator {
+    #[default]
+    None,
+    CapsLock,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
