@@ -17,7 +17,7 @@ use std::ffi::CString;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
 use std::process::Stdio;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
@@ -96,6 +96,10 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
     tracing::info!("Listening on {}", local_addr);
 
     let (mut clipboard_changes, clipboard) = clipboard::new(config.clipboard.clone());
+    let reply_timeout = match config.clipboard {
+        Some(_) => rkvm_net::CLIPBOARD_TIMEOUT,
+        None => rkvm_net::READ_TIMEOUT,
+    };
 
     let mut monitor = Monitor::new(config.ignore_devices.clone());
     let mut devices = Slab::<Device>::new();
@@ -120,14 +124,14 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
         tokio::select! {
             data = clipboard_changes.next() => {
                 for (_, client) in &clients {
-                    let _ = client.sender.send(Update::Clipboard(data.clone())).await;
+                    let _ = client.sender.try_send(Update::Clipboard(data.clone()));
                 }
             }
             data = shared => {
                 clipboard.apply(data.clone());
 
                 for (_, client) in &clients {
-                    let _ = client.sender.send(Update::Clipboard(data.clone())).await;
+                    let _ = client.sender.try_send(Update::Clipboard(data.clone()));
                 }
             }
             result = listener.accept() => {
@@ -153,6 +157,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             stream,
                             acceptor,
                             &password,
+                            reply_timeout,
                         )
                         .await;
 
@@ -549,6 +554,7 @@ async fn client(
     stream: TcpStream,
     acceptor: TlsAcceptor,
     password: &str,
+    reply_timeout: Duration,
 ) -> Result<(), ClientError> {
     // Input events are tiny and latency sensitive, don't let Nagle sit on them.
     stream.set_nodelay(true)?;
@@ -647,7 +653,7 @@ async fn client(
 
             let start = Instant::now();
             let pong =
-                rkvm_net::timeout(rkvm_net::CLIPBOARD_TIMEOUT, Pong::decode(&mut stream)).await?;
+                rkvm_net::timeout(reply_timeout, Pong::decode(&mut stream)).await?;
             let duration = start.elapsed();
 
             tracing::debug!(duration = ?duration, "Received pong");

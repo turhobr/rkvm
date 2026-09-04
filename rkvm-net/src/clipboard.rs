@@ -138,7 +138,7 @@ async fn run(config: Config, changed: Sender<Data>, mut apply: Receiver<Data>) {
 }
 
 async fn read(config: &Config) -> Result<Option<Data>, Error> {
-    let types = command(&config.list_types, None).await?;
+    let types = command(&config.list_types).await?;
     let types = String::from_utf8_lossy(&types).into_owned();
 
     let mime = match pick(&types) {
@@ -146,7 +146,7 @@ async fn read(config: &Config) -> Result<Option<Data>, Error> {
         None => return Ok(None),
     };
 
-    let data = command(&config.read.replace("{type}", &quote(mime)), None).await?;
+    let data = command(&config.read.replace("{type}", &quote(mime))).await?;
     if data.is_empty() {
         return Ok(None);
     }
@@ -187,22 +187,14 @@ async fn write(config: &Config, data: &Data) -> Result<(), Error> {
     }
 }
 
-async fn command(command: &str, input: Option<&[u8]>) -> Result<Vec<u8>, Error> {
-    let mut child = Command::new("sh")
+async fn command(command: &str) -> Result<Vec<u8>, Error> {
+    let child = Command::new("sh")
         .arg("-c")
         .arg(command)
-        .stdin(match input {
-            Some(_) => Stdio::piped(),
-            None => Stdio::null(),
-        })
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;
-
-    if let Some(input) = input {
-        let mut stdin = child.stdin.take().unwrap();
-        stdin.write_all(input).await?;
-    }
 
     let output = match time::timeout(COMMAND_TIMEOUT, child.wait_with_output()).await {
         Ok(output) => output?,
