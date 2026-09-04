@@ -210,10 +210,11 @@ pub async fn run(
                         if pressed_keys.len() == switch_keys.len() {
                             switched = true;
 
-                            let exists = |idx| idx == 0 || clients.contains(idx - 1);
+                            // Slab keys are sparse, so the cycle has to span the highest one rather than the count.
+                            let end = clients.iter().map(|(key, _)| key + 2).max().unwrap_or(1);
                             loop {
-                                current = (current + 1) % (clients.len() + 1);
-                                if exists(current) {
+                                current = (current + 1) % end;
+                                if current == 0 || clients.contains(current - 1) {
                                     break;
                                 }
                             }
