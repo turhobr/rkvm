@@ -72,7 +72,10 @@ async fn monitor(sender: Sender<Result<Interceptor, Error>>) {
 
             let interceptor = match Interceptor::open(&path, &registry).await {
                 Ok(interceptor) => interceptor,
-                Err(OpenError::Io(err)) => return Err(err),
+                Err(OpenError::Io(err)) => {
+                    tracing::warn!("Skipping {:?}: {}", path, err);
+                    continue;
+                }
                 Err(OpenError::NotAppliable) => continue,
             };
 
