@@ -227,6 +227,15 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
 
                 if alive {
                     let client = Client { sender, addr, name };
+
+                    if client.name.is_some()
+                        && clients.iter().any(|(_, other)| other.name == client.name)
+                    {
+                        tracing::warn!(
+                            name = ?client.name,
+                            "Another client uses this name, switching to it is ambiguous"
+                        );
+                    }
                     tracing::info!(addr = %addr, name = ?client.name, "Registered client");
 
                     clients.insert(client);
