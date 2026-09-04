@@ -9,7 +9,7 @@ use rkvm_net::message::Message;
 use rkvm_net::version::Version;
 use rkvm_net::{Pong, Update};
 use slab::Slab;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
@@ -55,25 +55,55 @@ pub async fn run(
     let mut suppressed = false;
 
     let (events_sender, mut events_receiver) = mpsc::channel(1);
+    let (authenticated_sender, mut authenticated_receiver) = mpsc::channel(1);
 
     loop {
         let event = async { events_receiver.recv().await.unwrap() };
+        let authenticated = async { authenticated_receiver.recv().await.unwrap() };
 
         tokio::select! {
             result = listener.accept() => {
                 let (stream, addr) = result.map_err(Error::Network)?;
                 let acceptor = acceptor.clone();
                 let password = password.to_owned();
+                let authenticated_sender = authenticated_sender.clone();
 
+                let (sender, receiver) = mpsc::channel(1);
+
+                let span = tracing::info_span!("connection", addr = %addr);
+                tokio::spawn(
+                    async move {
+                        tracing::info!("Connected");
+
+                        let result = client(
+                            sender,
+                            addr,
+                            authenticated_sender,
+                            receiver,
+                            stream,
+                            acceptor,
+                            &password,
+                        )
+                        .await;
+
+                        match result {
+                            Ok(()) => tracing::info!("Disconnected"),
+                            Err(err) => tracing::error!("Disconnected: {}", err),
+                        }
+                    }
+                    .instrument(span),
+                );
+            }
+            (sender, addr) = authenticated => {
                 // Remove dead clients.
                 clients.retain(|_, (client, _)| !client.is_closed());
                 if current != 0 && !clients.contains(current - 1) {
                     current = 0;
                 }
 
-                let init_updates = devices
-                    .iter()
-                    .map(|(id, device)| Update::CreateDevice {
+                let mut alive = true;
+                for (id, device) in &devices {
+                    let update = Update::CreateDevice {
                         id,
                         name: device.name.clone(),
                         version: device.version,
@@ -84,24 +114,18 @@ pub async fn run(
                         keys: device.keys.clone(),
                         delay: device.delay,
                         period: device.period,
-                    })
-                    .collect();
+                    };
 
-                let (sender, receiver) = mpsc::channel(1);
-                clients.insert((sender, addr));
-
-                let span = tracing::info_span!("connection", addr = %addr);
-                tokio::spawn(
-                    async move {
-                        tracing::info!("Connected");
-
-                        match client(init_updates, receiver, stream, acceptor, &password).await {
-                            Ok(()) => tracing::info!("Disconnected"),
-                            Err(err) => tracing::error!("Disconnected: {}", err),
-                        }
+                    if sender.send(update).await.is_err() {
+                        alive = false;
+                        break;
                     }
-                    .instrument(span),
-                );
+                }
+
+                if alive {
+                    clients.insert((sender, addr));
+                    tracing::info!(addr = %addr, "Registered client");
+                }
             }
             result = monitor.read() => {
                 let mut interceptor = result.map_err(Error::Input)?;
@@ -354,7 +378,9 @@ enum ClientError {
 }
 
 async fn client(
-    mut init_updates: VecDeque<Update>,
+    sender: Sender<Update>,
+    addr: SocketAddr,
+    authenticated: Sender<(Sender<Update>, SocketAddr)>,
     mut receiver: Receiver<Update>,
     stream: TcpStream,
     acceptor: TlsAcceptor,
@@ -412,15 +438,14 @@ async fn client(
 
     tracing::info!("Authenticated successfully");
 
+    if authenticated.send((sender, addr)).await.is_err() {
+        return Ok(());
+    }
+
     let mut interval = time::interval(rkvm_net::PING_INTERVAL);
 
     loop {
-        let recv = async {
-            match init_updates.pop_front() {
-                Some(update) => Some(update),
-                None => receiver.recv().await,
-            }
-        };
+        let recv = receiver.recv();
 
         let update = tokio::select! {
             // Make sure pings have priority.
