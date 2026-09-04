@@ -15,10 +15,12 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::io::{self, ErrorKind};
 use std::net::SocketAddr;
+use std::process::Stdio;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::process::Command;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time;
@@ -333,6 +335,10 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                                         };
 
                                         tracing::info!(target = %label, "Switched");
+
+                                        if let Some(command) = &config.on_switch {
+                                            run_on_switch(command, &label);
+                                        }
                                     }
                                     None => {
                                         if let Target::Client(name) = &shortcut.target {
@@ -442,6 +448,21 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                 Err(err) => return Err(Error::Input(err)),
             }
         }
+    }
+}
+
+fn run_on_switch(command: &str, target: &str) {
+    let result = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .arg("rkvm")
+        .arg(target)
+        .env("RKVM_TARGET", target)
+        .stdin(Stdio::null())
+        .spawn();
+
+    if let Err(err) = result {
+        tracing::warn!("Failed to run on-switch command: {}", err);
     }
 }
 

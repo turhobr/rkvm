@@ -14,6 +14,7 @@ pub struct Config {
     #[serde(default)]
     pub switch_to: HashMap<String, HashSet<SwitchKey>>,
     pub propagate_switch_keys: Option<bool>,
+    pub on_switch: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Hash)]

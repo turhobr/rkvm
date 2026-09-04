@@ -13,6 +13,9 @@ switch-keys = ["left-alt", "left-ctrl"]
 # combination is withheld when this is false.
 # Optional, defaults to true.
 # propagate-switch-keys = true
+# Optional command to run on every switch, with the target's name in $1 and $RKVM_TARGET.
+# on-switch = "notify-send rkvm \"now on $RKVM_TARGET\""
+
 certificate = "/etc/rkvm/certificate.pem"
 key = "/etc/rkvm/key.pem"
 
