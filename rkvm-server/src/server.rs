@@ -28,6 +28,8 @@ use tokio::time;
 use tokio_rustls::TlsAcceptor;
 use tracing::Instrument;
 
+const MAX_NAME_LENGTH: usize = 64;
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Network error: {0}")]
@@ -554,6 +556,8 @@ enum ClientError {
     Version { server: Version, client: Version },
     #[error("Invalid password")]
     Auth,
+    #[error("Invalid client name")]
+    Name,
     #[error(transparent)]
     Rand(#[from] rand::Error),
 }
@@ -624,6 +628,16 @@ async fn client(
 
     let name =
         rkvm_net::timeout(rkvm_net::READ_TIMEOUT, Option::<String>::decode(&mut stream)).await?;
+
+    if let Some(name) = &name {
+        let sane = !name.is_empty()
+            && name.len() <= MAX_NAME_LENGTH
+            && !name.chars().any(char::is_control);
+
+        if !sane {
+            return Err(ClientError::Name);
+        }
+    }
 
     tracing::info!("Authenticated successfully");
 
