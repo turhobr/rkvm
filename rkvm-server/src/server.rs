@@ -109,7 +109,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
     let mut current = 0;
     let mut previous = 0;
     let mut changed = false;
-    let mut pressed_keys = HashSet::new();
+    let mut pressed_keys = HashMap::new();
     let mut deferred = Vec::new();
     let mut propagated = HashMap::new();
     let mut suppressed = false;
@@ -321,7 +321,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             pressed = down;
 
                             match down {
-                                true => pressed_keys.insert(key),
+                                true => pressed_keys.insert(key, id),
                                 false => pressed_keys.remove(&key),
                             };
                         }
@@ -334,9 +334,9 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                     if press {
                         let shortcut = pressed
                             .then(|| {
-                                shortcuts
-                                    .iter()
-                                    .find(|shortcut| shortcut.keys.is_subset(&pressed_keys))
+                                shortcuts.iter().find(|shortcut| {
+                                    shortcut.keys.iter().all(|key| pressed_keys.contains_key(key))
+                                })
                             })
                             .flatten();
 
@@ -506,6 +506,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
 
                     deferred.retain(|(device, _)| *device != id);
                     propagated.retain(|_, device| *device != id);
+                    pressed_keys.retain(|_, device| *device != id);
 
                     tracing::info!(id = %id, "Destroyed device");
                 }
