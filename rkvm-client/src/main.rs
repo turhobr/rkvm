@@ -7,11 +7,15 @@ use config::Config;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use tokio::{fs, signal};
+use std::time::{Duration, Instant};
+use tokio::{fs, signal, time};
 use tracing::subscriber;
 use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;
+
+const RECONNECT_MIN: Duration = Duration::from_millis(500);
+const RECONNECT_MAX: Duration = Duration::from_secs(5);
 
 #[derive(Parser)]
 #[structopt(name = "rkvm-client", about = "The rkvm client application")]
@@ -66,13 +70,38 @@ async fn main() -> ExitCode {
         }
     };
 
-    tokio::select! {
-        result = client::run(&config.server.hostname, config.server.port, connector, &config.password, &config.name) => {
-            if let Err(err) = result {
-                tracing::error!("Error: {}", err);
-                return ExitCode::FAILURE;
+    let run = async {
+        let mut delay = RECONNECT_MIN;
+
+        loop {
+            let start = Instant::now();
+            let result = client::run(
+                &config.server.hostname,
+                config.server.port,
+                connector.clone(),
+                &config.password,
+                &config.name,
+            )
+            .await;
+
+            match result {
+                Ok(()) => tracing::info!("Disconnected"),
+                Err(err) => tracing::error!("Error: {}", err),
             }
+
+            if start.elapsed() >= RECONNECT_MAX {
+                delay = RECONNECT_MIN;
+            }
+
+            tracing::info!("Reconnecting in {:?}", delay);
+            time::sleep(delay).await;
+
+            delay = (delay * 2).min(RECONNECT_MAX);
         }
+    };
+
+    tokio::select! {
+        _ = run => {}
         // This is needed to properly clean libevdev stuff up.
         result = signal::ctrl_c() => {
             if let Err(err) = result {
