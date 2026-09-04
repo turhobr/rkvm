@@ -38,7 +38,7 @@ password = "123456789"
 # Shortcuts that jump straight to one machine instead of cycling.
 # "server" means this machine, any other name matches a client's `name`.
 # [switch-to]
-# server = ["left-alt", "escape"]
+# server = ["left-alt", "esc"]
 # laptop = ["left-alt", "f1"]
 
 # Clipboard sharing. All three commands run through sh,

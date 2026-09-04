@@ -126,7 +126,7 @@ key = "/etc/rkvm/key.pem"
 password = "123456789"
 
 [switch-to]
-server = ["left-alt", "escape"]
+server = ["left-alt", "esc"]
 laptop = ["left-alt", "f1"]
 ```
 
