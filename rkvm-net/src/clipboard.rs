@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::time;
+use tokio::time::{self, MissedTickBehavior};
 
 pub const MAX_SIZE: usize = 4 * 1024 * 1024;
 
@@ -84,6 +84,8 @@ impl Applier {
 
 async fn run(config: Config, changed: Sender<Data>, mut apply: Receiver<Data>) {
     let mut interval = time::interval(POLL_INTERVAL);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     let mut last = None;
 
     loop {
@@ -170,6 +172,7 @@ async fn write(config: &Config, data: &Data) -> Result<(), Error> {
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()?;
 
     let mut stdin = child.stdin.take().unwrap();
@@ -194,6 +197,7 @@ async fn command(command: &str) -> Result<Vec<u8>, Error> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .spawn()?;
 
     let output = match time::timeout(COMMAND_TIMEOUT, child.wait_with_output()).await {
