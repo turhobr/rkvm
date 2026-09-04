@@ -20,8 +20,15 @@ impl<T: DeserializeOwned + Serialize + Sync> Message for T {
             return Err(Error::new(ErrorKind::InvalidData, "Message too large"));
         }
 
-        let mut data = vec![0; length as usize];
-        stream.read_exact(&mut data).await?;
+        let mut data = Vec::new();
+        stream.take(length.into()).read_to_end(&mut data).await?;
+
+        if data.len() != length as usize {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Message shorter than advertised",
+            ));
+        }
 
         let data = options()
             .deserialize(&data)
