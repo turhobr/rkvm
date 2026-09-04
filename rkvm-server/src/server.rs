@@ -50,6 +50,9 @@ pub async fn run(
     let mut previous = 0;
     let mut changed = false;
     let mut pressed_keys = HashSet::new();
+    let mut deferred = Vec::new();
+    let mut propagated = HashMap::new();
+    let mut suppressed = false;
 
     let (events_sender, mut events_receiver) = mpsc::channel(1);
 
@@ -201,9 +204,12 @@ pub async fn run(
 
                     // Who to send this event to.
                     let mut idx = current;
+                    let mut switched = false;
 
                     if press {
                         if pressed_keys.len() == switch_keys.len() {
+                            switched = true;
+
                             let exists = |idx| idx == 0 || clients.contains(idx - 1);
                             loop {
                                 current = (current + 1) % (clients.len() + 1);
@@ -229,13 +235,52 @@ pub async fn run(
                         }
                     }
 
+                    let mut events = Vec::new();
+
                     if press && !propagate_switch_keys {
-                        continue;
+                        if switched {
+                            // Release the switch keys that were already let through, so that they
+                            // don't stay stuck down on the other side.
+                            for (key, id) in propagated.drain() {
+                                events.push((id, Event::Key(KeyEvent { key, down: false })));
+                                events.push((id, Event::Sync(SyncEvent::All)));
+                            }
+
+                            deferred.clear();
+                            suppressed = true;
+                        } else if suppressed {
+                            suppressed = !pressed_keys.is_empty();
+                        } else {
+                            // On its own a switch key is an ordinary key, but it's not known yet
+                            // whether the combination is going to be completed, so hold it back.
+                            deferred.push((id, event));
+                            deferred.push((id, Event::Sync(SyncEvent::All)));
+
+                            if pressed_keys.is_empty() {
+                                events.append(&mut deferred);
+                            }
+                        }
+                    } else {
+                        events.append(&mut deferred);
+                        events.push((id, event));
+
+                        if press {
+                            events.push((id, Event::Sync(SyncEvent::All)));
+                        }
                     }
 
-                    let events = [event]
-                        .into_iter()
-                        .chain(press.then_some(Event::Sync(SyncEvent::All)));
+                    if !propagate_switch_keys {
+                        for (id, event) in &events {
+                            if let Event::Key(KeyEvent { key, down }) = event {
+                                if switch_keys.contains(key) {
+                                    match *down {
+                                        true => propagated.insert(*key, *id),
+                                        false => propagated.remove(key),
+                                    };
+                                }
+                            }
+                        }
+                    }
 
                     // Index 0 - special case to keep the modular arithmetic above working.
                     if idx == 0 {
@@ -243,7 +288,7 @@ pub async fn run(
                         // In this scenario, the interceptor task is sending events to the main task,
                         // while the main task is simultaneously sending events back to the interceptor.
                         // This creates a classic deadlock situation where both tasks are waiting for each other.
-                        for event in events {
+                        for (id, event) in events {
                             match devices[id].sender.try_send(event) {
                                 Ok(()) | Err(TrySendError::Closed(_)) => {},
                                 Err(TrySendError::Full(_)) => return Err(Error::Overflow),
@@ -253,13 +298,15 @@ pub async fn run(
                         continue;
                     }
 
-                    for event in events {
+                    for (id, event) in events {
                         if clients[idx - 1].0.send(Update::Event { id, event }).await.is_err() {
                             clients.remove(idx - 1);
 
                             if current == idx {
                                 current = 0;
                             }
+
+                            break;
                         }
                     }
                 }
@@ -268,6 +315,9 @@ pub async fn run(
                         let _ = sender.send(Update::DestroyDevice { id }).await;
                     }
                     devices.remove(id);
+
+                    deferred.retain(|(device, _)| *device != id);
+                    propagated.retain(|_, device| *device != id);
 
                     tracing::info!(id = %id, "Destroyed device");
                 }

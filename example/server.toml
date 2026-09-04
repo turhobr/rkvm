@@ -1,7 +1,9 @@
 listen = "0.0.0.0:5258"
 # See `switch-keys.md` in the repository root for the list of all possible keys.
 switch-keys = ["left-alt", "left-ctrl"]
-# Whether switch key presses should be propagated on the server and its clients.
+# Whether the switch key combination should be propagated on the server and its clients.
+# Individual switch keys still work as normal keys either way, only the completed
+# combination is withheld when this is false.
 # Optional, defaults to true.
 # propagate-switch-keys = true
 certificate = "/etc/rkvm/certificate.pem"
