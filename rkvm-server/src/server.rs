@@ -67,7 +67,7 @@ pub async fn run(
 
                 // Remove dead clients.
                 clients.retain(|_, (client, _)| !client.is_closed());
-                if !clients.contains(current) {
+                if current != 0 && !clients.contains(current - 1) {
                     current = 0;
                 }
 
