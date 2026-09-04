@@ -34,14 +34,16 @@ pub enum Error {
 }
 
 pub async fn run(
-    listen: SocketAddr,
+    listen: &str,
     acceptor: TlsAcceptor,
     password: &str,
     switch_keys: &HashSet<Key>,
     propagate_switch_keys: bool,
 ) -> Result<(), Error> {
-    let listener = TcpListener::bind(&listen).await.map_err(Error::Network)?;
-    tracing::info!("Listening on {}", listen);
+    let listener = TcpListener::bind(listen).await.map_err(Error::Network)?;
+    let local_addr = listener.local_addr().map_err(Error::Network)?;
+
+    tracing::info!("Listening on {}", local_addr);
 
     let mut monitor = Monitor::new();
     let mut devices = Slab::<Device>::new();

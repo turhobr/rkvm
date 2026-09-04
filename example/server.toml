@@ -1,3 +1,4 @@
+# Either an address or a hostname, with a port.
 listen = "0.0.0.0:5258"
 # See `switch-keys.md` in the repository root for the list of all possible keys.
 switch-keys = ["left-alt", "left-ctrl"]
