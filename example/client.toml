@@ -14,6 +14,10 @@ password = "123456789"
 # Name of this machine, so the server can switch straight to it.
 # name = "laptop"
 
+# Command to run through sh when this machine starts or stops being controlled.
+# "true" or "false" lands in $1 and in $RKVM_ACTIVE.
+# on-active = "test \"$1\" = true && notify-send rkvm 'keyboard is here'"
+
 ### Optional, and has to stay at the end of the file
 ### Everything below a [table] header belongs to that table.
 

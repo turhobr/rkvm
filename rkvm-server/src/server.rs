@@ -357,6 +357,14 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                                     Some(target) => {
                                         current = target;
 
+                                        if current != previous {
+                                            for (idx, active) in [(previous, false), (current, true)] {
+                                                if let Some(client) = idx.checked_sub(1).and_then(|idx| clients.get(idx)) {
+                                                    let _ = client.sender.try_send(Update::Active(active));
+                                                }
+                                            }
+                                        }
+
                                         let label = match current {
                                             0 => "server".to_owned(),
                                             current => clients[current - 1].label(),

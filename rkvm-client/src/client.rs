@@ -9,10 +9,12 @@ use rkvm_net::{Pong, Update};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io;
+use std::process::Stdio;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::io::{AsyncWriteExt, BufStream};
 use tokio::net::TcpStream;
+use tokio::process::Command;
 use tokio::time;
 use tokio_rustls::rustls::ServerName;
 use tokio_rustls::TlsConnector;
@@ -209,6 +211,13 @@ pub async fn run(
 
                 tracing::trace!(id = %id, "Wrote an event to device");
             }
+            Update::Active(active) => {
+                tracing::info!(active = %active, "Control changed");
+
+                if let Some(command) = &config.on_active {
+                    run_on_active(command, active);
+                }
+            }
             Update::Clipboard(data) => {
                 tracing::debug!(data = ?data, "Received clipboard");
                 applier.apply(data);
@@ -237,5 +246,20 @@ pub async fn run(
                 tracing::debug!(duration = ?duration, "Sent pong");
             }
         }
+    }
+}
+
+fn run_on_active(command: &str, active: bool) {
+    let result = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .arg("rkvm")
+        .arg(active.to_string())
+        .env("RKVM_ACTIVE", active.to_string())
+        .stdin(Stdio::null())
+        .spawn();
+
+    if let Err(err) = result {
+        tracing::warn!("Failed to run on-active command: {}", err);
     }
 }

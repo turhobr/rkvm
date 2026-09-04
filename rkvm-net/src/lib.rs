@@ -54,6 +54,7 @@ pub enum Update {
         event: Event,
     },
     Clipboard(clipboard::Data),
+    Active(bool),
     Ping,
 }
 

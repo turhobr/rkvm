@@ -14,6 +14,7 @@ pub struct Config {
     pub password: String,
     pub name: Option<String>,
     pub clipboard: Option<rkvm_net::clipboard::Config>,
+    pub on_active: Option<String>,
 }
 
 pub struct Server {
