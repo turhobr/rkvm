@@ -45,6 +45,8 @@ After installation:
   ```
   Do not edit the example configs, they will be overwritten by your package manager.
 - **Change the password** and optionally reconfigure the network listen address and key bindings for switching clients  
+- To find out what a key is called, run the server with `RUST_LOG=debug` and press it.
+  The name it logs is the one to put in the config, written in kebab case - `LeftAlt` is `left-alt`.
 - Since rkvm-server grabs all input, i's a good idea to do a test run first to make sure you won't end up
   being unable to user your keyboard and/or mouse because your display server is not properly configured to receive input from rkvm.
 

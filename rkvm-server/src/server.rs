@@ -218,6 +218,8 @@ pub async fn run(
                     let mut press = false;
 
                     if let Event::Key(KeyEvent { key, down }) = event {
+                        tracing::debug!(key = ?key, down = %down, "Key event");
+
                         if switch_keys.contains(&key) {
                             press = true;
 
