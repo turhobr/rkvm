@@ -4,6 +4,7 @@ mod tls;
 
 use clap::Parser;
 use config::Config;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tokio::{fs, signal};
@@ -39,6 +40,15 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    if let Ok(metadata) = fs::metadata(&args.config_path).await {
+        if metadata.permissions().mode() & 0o077 != 0 {
+            tracing::warn!(
+                "Config file {:?} is accessible to other users, it contains the password",
+                args.config_path
+            );
+        }
+    }
 
     let config = match toml::from_str::<Config>(&config) {
         Ok(config) => config,
