@@ -19,7 +19,12 @@ use std::fs;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::path::Path;
+use std::time::Duration;
 use thiserror::Error;
+use tokio::time;
+
+// How long to wait for keys held during startup to be released before grabbing anyway.
+const RELEASE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct Interceptor {
     evdev: Evdev,
@@ -44,7 +49,7 @@ impl Interceptor {
         }
 
         while !matches!(self.events.back(), Some(Event::Sync(SyncEvent::All))) {
-            let (r#type, code, value) = self.read_raw().await?;
+            let (r#type, code, value) = read_raw(&self.evdev).await?;
             let event = match r#type as _ {
                 glue::EV_REL if !self.dropped => {
                     RelAxis::from_raw(code).map(|axis| Event::Rel(RelEvent { axis, value }))
@@ -141,45 +146,6 @@ impl Interceptor {
         Repeat::new(self)
     }
 
-    async fn read_raw(&mut self) -> Result<(u16, u16, i32), Error> {
-        let file = self.evdev.file().unwrap();
-
-        loop {
-            let result = file.readable().await?.try_io(|_| {
-                let mut event = MaybeUninit::uninit();
-                let ret = unsafe {
-                    glue::libevdev_next_event(
-                        self.evdev.as_ptr(),
-                        glue::libevdev_read_flag_LIBEVDEV_READ_FLAG_NORMAL,
-                        event.as_mut_ptr(),
-                    )
-                };
-
-                if ret < 0 {
-                    // ENODEV means that the device got disconnected.
-                    // However, ErrorKind doesn't have support for it yet,
-                    // so translate to BrokenPipe here to not introduce
-                    // platform specific code to rkvm-server.
-                    let err = if ret == -libc::ENODEV {
-                        Error::new(ErrorKind::BrokenPipe, "Device disconnected")
-                    } else {
-                        Error::from_raw_os_error(-ret)
-                    };
-
-                    return Err(err);
-                }
-
-                let event = unsafe { event.assume_init() };
-                Ok((event.type_, event.code, event.value))
-            });
-
-            match result {
-                Ok(result) => return result,
-                Err(_) => continue, // This means it would block.
-            }
-        }
-    }
-
     #[tracing::instrument(skip(registry))]
     pub(crate) async fn open(path: &Path, registry: &Registry) -> Result<Self, OpenError> {
         let evdev = Evdev::open(path).await?;
@@ -232,6 +198,26 @@ impl Interceptor {
             glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_VIRTUAL as _);
         }
 
+        // Grabbing while a key is held denies its release event to everyone else,
+        // leaving the key stuck down - typically the Enter that started the server.
+        // The device isn't grabbed yet, so these events still reach the rest of the system.
+        if any_key_pressed(&evdev) {
+            tracing::debug!(?path, "Waiting for held keys to be released");
+
+            let wait = async {
+                while any_key_pressed(&evdev) {
+                    read_raw(&evdev).await?;
+                }
+
+                Ok::<_, Error>(())
+            };
+
+            match time::timeout(RELEASE_TIMEOUT, wait).await {
+                Ok(result) => result?,
+                Err(_) => tracing::warn!(?path, "Keys are still held, grabbing anyway"),
+            }
+        }
+
         let ret =
             unsafe { glue::libevdev_grab(evdev.as_ptr(), glue::libevdev_grab_mode_LIBEVDEV_GRAB) };
 
@@ -271,6 +257,50 @@ impl Interceptor {
             _writer_handle: writer_handle,
         })
     }
+}
+
+async fn read_raw(evdev: &Evdev) -> Result<(u16, u16, i32), Error> {
+    let file = evdev.file().unwrap();
+
+    loop {
+        let result = file.readable().await?.try_io(|_| {
+            let mut event = MaybeUninit::uninit();
+            let ret = unsafe {
+                glue::libevdev_next_event(
+                    evdev.as_ptr(),
+                    glue::libevdev_read_flag_LIBEVDEV_READ_FLAG_NORMAL,
+                    event.as_mut_ptr(),
+                )
+            };
+
+            if ret < 0 {
+                // ENODEV means that the device got disconnected.
+                // However, ErrorKind doesn't have support for it yet,
+                // so translate to BrokenPipe here to not introduce
+                // platform specific code to rkvm-server.
+                let err = if ret == -libc::ENODEV {
+                    Error::new(ErrorKind::BrokenPipe, "Device disconnected")
+                } else {
+                    Error::from_raw_os_error(-ret)
+                };
+
+                return Err(err);
+            }
+
+            let event = unsafe { event.assume_init() };
+            Ok((event.type_, event.code, event.value))
+        });
+
+        match result {
+            Ok(result) => return result,
+            Err(_) => continue, // This means it would block.
+        }
+    }
+}
+
+fn any_key_pressed(evdev: &Evdev) -> bool {
+    (0..glue::KEY_CNT)
+        .any(|code| unsafe { glue::libevdev_get_event_value(evdev.as_ptr(), glue::EV_KEY, code) != 0 })
 }
 
 unsafe impl Send for Interceptor {}
