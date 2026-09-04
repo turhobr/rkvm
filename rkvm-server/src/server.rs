@@ -390,6 +390,9 @@ async fn client(
     acceptor: TlsAcceptor,
     password: &str,
 ) -> Result<(), ClientError> {
+    // Input events are tiny and latency sensitive, don't let Nagle sit on them.
+    stream.set_nodelay(true)?;
+
     let stream = rkvm_net::timeout(rkvm_net::TLS_TIMEOUT, acceptor.accept(stream)).await?;
     tracing::info!("TLS connected");
 

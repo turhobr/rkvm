@@ -40,6 +40,9 @@ pub async fn run(
     }
     .map_err(Error::Network)?;
 
+    // Input events are tiny and latency sensitive, don't let Nagle sit on them.
+    stream.set_nodelay(true).map_err(Error::Network)?;
+
     tracing::info!("Connected to server");
 
     let stream = rkvm_net::timeout(
