@@ -149,6 +149,11 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                 clipboard_contents = Some(data);
             }
             data = shared => {
+                if !data.valid() {
+                    tracing::warn!("Ignoring malformed clipboard contents from a client");
+                    continue;
+                }
+
                 clipboard.apply(data.clone());
 
                 for (_, client) in &clients {

@@ -24,6 +24,12 @@ pub struct Data {
     pub data: Vec<u8>,
 }
 
+impl Data {
+    pub fn valid(&self) -> bool {
+        !self.mime.is_empty() && self.mime.len() <= MAX_MIME_LENGTH && self.data.len() <= MAX_SIZE
+    }
+}
+
 impl Debug for Data {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({} bytes)", self.mime, self.data.len())
@@ -118,8 +124,8 @@ async fn run(config: Config, changed: Sender<Data>, mut apply: Receiver<Data>) {
                     None => break,
                 };
 
-                if data.mime.len() > MAX_MIME_LENGTH || data.data.len() > MAX_SIZE {
-                    tracing::warn!("Ignoring oversized clipboard contents");
+                if !data.valid() {
+                    tracing::warn!("Ignoring malformed clipboard contents");
                     continue;
                 }
 
