@@ -43,6 +43,8 @@ pub enum Error {
     Input(io::Error),
     #[error("Event queue overflow")]
     Overflow,
+    #[error("Config error: {0}")]
+    Config(&'static str),
 }
 
 enum Target {
@@ -87,6 +89,10 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
             keys: keys.iter().copied().map(Into::into).collect(),
             target,
         });
+    }
+
+    if shortcuts.iter().any(|shortcut| shortcut.keys.is_empty()) {
+        return Err(Error::Config("A switch key combination is empty"));
     }
 
     // A longer combination has to win over a shorter one it contains.
