@@ -534,7 +534,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                         }
                     }
                 }
-                Err(err) if err.kind() == ErrorKind::BrokenPipe => {
+                Err(err) => {
                     for (_, client) in &clients {
                         let _ = client.sender.send(Update::DestroyDevice { id }).await;
                     }
@@ -544,9 +544,12 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                     propagated.retain(|_, device| *device != id);
                     pressed_keys.retain(|_, device| *device != id);
 
-                    tracing::info!(id = %id, "Destroyed device");
+                    if err.kind() == ErrorKind::BrokenPipe {
+                        tracing::info!(id = %id, "Destroyed device");
+                    } else {
+                        tracing::error!(id = %id, "Destroyed device after an error: {}", err);
+                    }
                 }
-                Err(err) => return Err(Error::Input(err)),
             }
         }
     }
