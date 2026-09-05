@@ -375,6 +375,11 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                             Some(shortcut) => {
                                 switched = true;
 
+                                clients.retain(|_, client| !client.sender.is_closed());
+                                if current != 0 && !clients.contains(current - 1) {
+                                    current = 0;
+                                }
+
                                 let target = match &shortcut.target {
                                     Target::Cycle => {
                                         // Slab keys are sparse, so the cycle has to span the highest one rather than the count.
