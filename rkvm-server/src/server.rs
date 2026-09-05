@@ -343,14 +343,14 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
             (id, result) = event => match result {
                 Ok(event) => {
                     let mut press = false;
-                    let mut pressed = false;
+                    let mut pressed = None;
 
                     if let Event::Key(KeyEvent { key, down }) = event {
                         tracing::debug!(key = ?key, down = %down, "Key event");
 
                         if switch_keys.contains(&key) {
                             press = true;
-                            pressed = down;
+                            pressed = down.then_some(key);
 
                             match down {
                                 true => pressed_keys.insert(key, id),
@@ -364,13 +364,12 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                     let mut switched = false;
 
                     if press {
-                        let shortcut = pressed
-                            .then(|| {
-                                shortcuts.iter().find(|shortcut| {
-                                    shortcut.keys.iter().all(|key| pressed_keys.contains_key(key))
-                                })
+                        let shortcut = pressed.and_then(|pressed| {
+                            shortcuts.iter().find(|shortcut| {
+                                shortcut.keys.contains(&pressed)
+                                    && shortcut.keys.iter().all(|key| pressed_keys.contains_key(key))
                             })
-                            .flatten();
+                        });
 
                         match shortcut {
                             Some(shortcut) => {
