@@ -35,6 +35,9 @@ const MAX_NAME_LENGTH: usize = 64;
 // Connections waiting to authenticate, so that a flood of them can't pile up.
 const MAX_PENDING: usize = 16;
 
+// A failed password attempt keeps holding one of those slots for this long.
+const AUTH_FAILURE_DELAY: Duration = Duration::from_secs(1);
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Network error: {0}")]
@@ -664,6 +667,7 @@ async fn client(
     .await?;
 
     if status == AuthStatus::Failed {
+        time::sleep(AUTH_FAILURE_DELAY).await;
         return Err(ClientError::Auth);
     }
 
