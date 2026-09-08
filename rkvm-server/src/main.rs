@@ -1,4 +1,6 @@
 mod config;
+mod notify;
+mod session;
 mod server;
 mod tls;
 
@@ -99,7 +101,7 @@ async fn main() -> ExitCode {
         }
     }
 
-    if config.indicator == Indicator::CapsLock {
+    if config.indicator.has(Indicator::CapsLock) {
         let _ = leds::set_caps_lock(false);
     }
 

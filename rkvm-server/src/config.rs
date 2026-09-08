@@ -18,16 +18,44 @@ pub struct Config {
     #[serde(default)]
     pub ignore_devices: Vec<String>,
     #[serde(default)]
-    pub indicator: Indicator,
+    pub indicator: IndicatorSet,
     pub clipboard: Option<rkvm_net::clipboard::Config>,
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Indicator {
-    #[default]
     None,
     CapsLock,
+    Notify,
+    Overlay,
+}
+
+// Either one of them or a list of them.
+#[derive(Deserialize, Clone, Default)]
+#[serde(from = "Indicators")]
+pub struct IndicatorSet(Vec<Indicator>);
+
+impl IndicatorSet {
+    pub fn has(&self, indicator: Indicator) -> bool {
+        self.0.contains(&indicator)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Indicators {
+    One(Indicator),
+    Many(Vec<Indicator>),
+}
+
+impl From<Indicators> for IndicatorSet {
+    fn from(indicators: Indicators) -> Self {
+        Self(match indicators {
+            Indicators::One(indicator) => vec![indicator],
+            Indicators::Many(indicators) => indicators,
+        })
+    }
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Hash)]

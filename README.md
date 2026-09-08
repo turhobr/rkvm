@@ -31,10 +31,14 @@ The server can run a command every time control moves, and a client can run one 
 arrives at it or leaves it. Use it for a notification, a wallpaper change, muting audio, or
 locking the screen you just left.
 
-**Caps lock indicator**
-The caps lock light on your keyboard turns on while another machine is being controlled, so
-you can tell at a glance where your typing is going. Every keyboard that has the light gets
-it, including the real one behind a remapper such as keyd. No display server is involved.
+**Indicators**
+`indicator = "caps-lock"` turns the caps lock light on while another machine is being
+controlled. Every keyboard that has the light gets it, including the real one behind a
+remapper such as keyd, and no display server is involved.
+
+`indicator = "notify"` pops a desktop notification naming the machine you moved to. rkvm
+finds your session and talks to your notification daemon itself, so there is no command and
+no environment to set up. Combine them with `indicator = ["caps-lock", "notify"]`.
 
 **Ignoring devices**
 Devices whose name matches an entry in `ignore-devices` are left alone. Useful for a gaming
@@ -113,7 +117,7 @@ $ cargo build --release
 | `password` | Clients have to send this to connect. |
 | `propagate-switch-keys` | Whether the switch keys also reach the machine being controlled. Defaults to `true`. Either way, the keys still work normally on their own. |
 | `ignore-devices` | Devices whose name contains any of these are never taken over. Case insensitive. |
-| `indicator` | `caps-lock` lights the caps lock LED while a client is being controlled. Defaults to `none`. |
+| `indicator` | How you are told where control went: `caps-lock`, `notify`, or `none`. Takes one value or a list of them. Defaults to `none`. |
 | `on-switch` | Command to run on every switch. The target's name arrives in `$1` and `$RKVM_TARGET`. |
 | `[switch-to]` | Shortcuts that jump straight to one machine. `server` means this machine, anything else matches a client's `name`. |
 | `[clipboard]` | Commands used to share the clipboard, see below. |

@@ -24,9 +24,9 @@ password = "123456789"
 # Case insensitive, matched on a substring.
 # ignore-devices = ["Wacom", "SteelSeries"]
 
-# Lights the caps lock LED up while another machine is being controlled.
-# Either "none" or "caps-lock".
-# indicator = "caps-lock"
+# How you are told where control went. One value or a list of them.
+# "caps-lock" lights the caps lock LED, "notify" pops a desktop notification.
+# indicator = ["caps-lock", "notify"]
 
 # Command to run on every switch, through sh.
 # The target's name is in $1 and in $RKVM_TARGET.

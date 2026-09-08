@@ -1,4 +1,5 @@
 use crate::config::{Config, Indicator};
+use crate::notify;
 
 use rkvm_input::abs::{AbsAxis, AbsInfo};
 use rkvm_input::event::Event;
@@ -428,11 +429,15 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                                             run_on_switch(command, &label);
                                         }
 
-                                        if config.indicator == Indicator::CapsLock {
+                                        if config.indicator.has(Indicator::CapsLock) {
                                             match leds::set_caps_lock(current != 0) {
                                                 Ok(count) => tracing::debug!(count = %count, "Set caps lock LED"),
                                                 Err(err) => tracing::warn!("Failed to set caps lock LED: {}", err),
                                             }
+                                        }
+
+                                        if config.indicator.has(Indicator::Notify) {
+                                            notify::show(&label);
                                         }
                                     }
                                     None => {
