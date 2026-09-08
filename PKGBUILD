@@ -1,5 +1,5 @@
 pkgname=rkvm-git
-pkgver=0.6.1.r1.gf237ac8
+pkgver=0.6.1.r35.gd4d3c4e
 pkgrel=1
 pkgdesc='Virtual KVM switch for Linux machines (local build)'
 arch=('x86_64')
@@ -13,7 +13,14 @@ conflicts=('rkvm')
 
 pkgver() {
   cd "$startdir"
-  git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+
+  # A fresh clone of a fork has no tags, so fall back to counting commits.
+  local described=$(git describe --long --tags 2>/dev/null)
+  if [ -n "$described" ]; then
+    printf '%s' "$described" | sed 's/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    printf '0.6.1.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
 }
 
 build() {
