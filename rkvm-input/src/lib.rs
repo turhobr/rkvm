@@ -2,6 +2,7 @@ pub mod abs;
 pub mod event;
 pub mod interceptor;
 pub mod key;
+pub mod leds;
 pub mod monitor;
 pub mod rel;
 pub mod sync;

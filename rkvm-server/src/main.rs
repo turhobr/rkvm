@@ -3,7 +3,8 @@ mod server;
 mod tls;
 
 use clap::Parser;
-use config::Config;
+use config::{Config, Indicator};
+use rkvm_input::leds;
 use std::future;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -96,6 +97,10 @@ async fn main() -> ExitCode {
         _ = shutdown => {
             tracing::info!("Shutting down as requested");
         }
+    }
+
+    if config.indicator == Indicator::CapsLock {
+        let _ = leds::set_caps_lock(false);
     }
 
     ExitCode::SUCCESS

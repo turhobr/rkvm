@@ -33,8 +33,8 @@ locking the screen you just left.
 
 **Caps lock indicator**
 The caps lock light on your keyboard turns on while another machine is being controlled, so
-you can tell at a glance where your typing is going. It is driven directly on the device,
-so no display server is involved.
+you can tell at a glance where your typing is going. Every keyboard that has the light gets
+it, including the real one behind a remapper such as keyd. No display server is involved.
 
 **Ignoring devices**
 Devices whose name matches an entry in `ignore-devices` are left alone. Useful for a gaming

@@ -3,6 +3,7 @@ use crate::config::{Config, Indicator};
 use rkvm_input::abs::{AbsAxis, AbsInfo};
 use rkvm_input::event::Event;
 use rkvm_input::key::{Key, KeyEvent};
+use rkvm_input::leds;
 use rkvm_input::monitor::Monitor;
 use rkvm_input::rel::RelAxis;
 use rkvm_input::sync::SyncEvent;
@@ -285,7 +286,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                     let _ = client.sender.send(update).await;
                 }
 
-                let (interceptor_sender, mut interceptor_receiver) = mpsc::channel::<DeviceCommand>(32);
+                let (interceptor_sender, mut interceptor_receiver) = mpsc::channel::<Event>(32);
                 devices.insert(Device {
                     name,
                     version,
@@ -308,30 +309,21 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                                     break;
                                 }
                             }
-                            command = interceptor_receiver.recv() => {
-                                let command = match command {
-                                    Some(command) => command,
+                            event = interceptor_receiver.recv() => {
+                                let event = match event {
+                                    Some(event) => event,
                                     None => break,
                                 };
 
-                                match command {
-                                    DeviceCommand::Event(event) => {
-                                        match interceptor.write(&event).await {
-                                            Ok(()) => {},
-                                            Err(err) => {
-                                                let _ = events_sender.send((id, Err(err))).await;
-                                                break;
-                                            }
-                                        }
-
-                                        tracing::trace!(id = %id, "Wrote an event to device");
-                                    }
-                                    DeviceCommand::CapsLockLed(on) => {
-                                        if let Err(err) = interceptor.set_caps_lock_led(on) {
-                                            tracing::warn!(id = %id, "Failed to set caps lock LED: {}", err);
-                                        }
+                                match interceptor.write(&event).await {
+                                    Ok(()) => {},
+                                    Err(err) => {
+                                        let _ = events_sender.send((id, Err(err))).await;
+                                        break;
                                     }
                                 }
+
+                                tracing::trace!(id = %id, "Wrote an event to device");
                             }
                         }
                     }
@@ -437,10 +429,9 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                                         }
 
                                         if config.indicator == Indicator::CapsLock {
-                                            for (_, device) in &devices {
-                                                let _ = device
-                                                    .sender
-                                                    .try_send(DeviceCommand::CapsLockLed(current != 0));
+                                            match leds::set_caps_lock(current != 0) {
+                                                Ok(count) => tracing::debug!(count = %count, "Set caps lock LED"),
+                                                Err(err) => tracing::warn!("Failed to set caps lock LED: {}", err),
                                             }
                                         }
                                     }
@@ -517,7 +508,7 @@ pub async fn run(config: &Config, acceptor: TlsAcceptor) -> Result<(), Error> {
                         // while the main task is simultaneously sending events back to the interceptor.
                         // This creates a classic deadlock situation where both tasks are waiting for each other.
                         for (id, event) in events {
-                            match devices[id].sender.try_send(DeviceCommand::Event(event)) {
+                            match devices[id].sender.try_send(event) {
                                 Ok(()) | Err(TrySendError::Closed(_)) => {},
                                 Err(TrySendError::Full(_)) => return Err(Error::Overflow),
                             }
@@ -588,12 +579,7 @@ struct Device {
     keys: HashSet<Key>,
     delay: Option<i32>,
     period: Option<i32>,
-    sender: Sender<DeviceCommand>,
-}
-
-enum DeviceCommand {
-    Event(Event),
-    CapsLockLed(bool),
+    sender: Sender<Event>,
 }
 
 #[derive(Error, Debug)]
