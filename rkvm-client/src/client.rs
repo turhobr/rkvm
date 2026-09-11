@@ -8,6 +8,7 @@ use rkvm_net::version::Version;
 use rkvm_net::{Pong, Update};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::io;
 use std::process::Stdio;
 use std::time::Instant;
@@ -161,9 +162,14 @@ pub async fn run(
                     )));
                 }
 
+                // Cloning the name exactly makes udev rules and libinput quirks meant for the
+                // real device apply to this one too, which can get it suspended or remapped.
+                let local = CString::new(format!("rkvm {}", name.to_string_lossy()))
+                    .unwrap_or_else(|_| name.clone());
+
                 let writer = async {
                     Writer::builder()?
-                        .name(&name)
+                        .name(&local)
                         .vendor(vendor)
                         .product(product)
                         .version(version)
