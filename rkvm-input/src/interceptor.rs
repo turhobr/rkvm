@@ -212,7 +212,7 @@ impl Interceptor {
         }
 
         unsafe {
-            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_VIRTUAL as _);
+            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_USB as _);
         }
 
         // Grabbing while a key is held denies its release event to everyone else,

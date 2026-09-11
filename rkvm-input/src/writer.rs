@@ -105,8 +105,10 @@ impl WriterBuilder {
     pub fn new() -> Result<Self, Error> {
         let evdev = Evdev::new()?;
 
+        // BUS_VIRTUAL makes libinput treat the device as a laptop's built in keyboard,
+        // which it then pairs with the lid and tablet mode switches and suspends.
         unsafe {
-            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_VIRTUAL as _);
+            glue::libevdev_set_id_bustype(evdev.as_ptr(), glue::BUS_USB as _);
         }
 
         Ok(Self { evdev })
